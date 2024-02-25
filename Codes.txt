@@ -1,0 +1,587 @@
+import pandas as pd
+import numpy as np
+from sklearn.experimental import enable_iterative_imputer
+from sklearn.impute import IterativeImputer, SimpleImputer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import classification_report, roc_auc_score, roc_curve
+import matplotlib.pyplot as plt
+import dalex as dx
+from sklearn.neural_network import MLPClassifier
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.linear_model import LogisticRegression
+import warnings
+warnings.filterwarnings('ignore')
+
+UC_2_final = pd.read_csv(r'D:/JupyterLab/MIMIC lab/UC_2_final.csv')
+
+# Rename the column 
+UC_2_final.rename(columns={"triage_acuity": "ESI","Asparate Aminotransferase (AST)":"AST", "Alanine Aminotransferase (ALT)":"ALT",
+                         "Hemoglobin.1":"Hemoglobin ",
+    "Calcium, Total":"Calcium", "Glucose.1":"Glucose ", "PTT":"aPPT"}, inplace=True)
+
+# Selecting relevant features for the model
+numerical_features = ["ESI",  # Changed from "triage_acuity" to "ESI"
+                      "Bicarbonate", "Magnesium", "Albumin", "AST",  # Changed from "Asparate Aminotransferase (AST)" to "AST"
+                      "ALT",  # Changed from "Alanine Aminotransferase (ALT)" to "ALT"
+                      "Hemoglobin ",  # Changed from "Hemoglobin.1" to "Hemoglobin"
+                      "triage_MAP", "MCV",
+                      "Calcium",  # Changed from "Calcium, Total" to "Calcium"
+                      "Chloride", "Creatinine", "Glucose ",  # Changed from "Glucose.1" to "Glucose"
+                      "Sodium", "aPPT",  # Changed from "PTT" to "aPPT"
+                      "Urea Nitrogen", "Platelet Count", "White Blood Cells", "Lactate"]
+
+
+categorical_features = ["ambulance"]
+
+outcome = ['outcome_critical']
+
+X_train = UC_2_final[UC_2_final['label'] == 'train'][numerical_features + categorical_features]
+y_train = UC_2_final[UC_2_final['label'] == 'train']['outcome_critical']
+X_test = UC_2_final[UC_2_final['label'] == 'test'][numerical_features + categorical_features]
+y_test = UC_2_final[UC_2_final['label'] == 'test']['outcome_critical']
+
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, roc_auc_score, roc_curve
+
+# Define the best hyperparameters obtained from tuning, random forest
+best_RFparams = {
+    "max_depth": None,             # Replace with the best value you found
+    "min_samples_split": 4,        # Replace with the best value you found
+    "n_estimators": 53,           # Replace with the best value you found
+    "max_features": 1              # Replace with the best value you found
+}
+
+
+# Model Training and Predictions
+rf_classifier = RandomForestClassifier(**best_RFparams, random_state=42) 
+rf_classifier.fit(X_train, y_train)
+y_pred = rf_classifier.predict(X_test)
+y_pred_proba = rf_classifier.predict_proba(X_test)[:, 1]
+y_pred_proba_rf = y_pred_proba
+
+# Evaluation Metrics
+classification_results = classification_report(y_test, y_pred)
+roc_auc = roc_auc_score(y_test, y_pred_proba)
+fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+
+# Get feature importances
+feature_importances = rf_classifier.feature_importances_
+
+# Calculate Accuracy
+accuracy = (y_pred == y_test).mean()
+
+# Calculate No Information Rate (proportion of majority class)
+no_info_rate = (y_test == 0).mean()
+
+# Calculate Balanced Accuracy
+balanced_accuracy = 0.5 * (sum(y_pred[y_test == 1] == 1) / sum(y_test == 1) +
+                           sum(y_pred[y_test == 0] == 0) / sum(y_test == 0))
+
+# Calculate Kappa
+from sklearn.metrics import cohen_kappa_score
+kappa = cohen_kappa_score(y_test, y_pred)
+
+# Calculate Precision, F1 Score, Sensitivity, and Specificity
+from sklearn.metrics import precision_score, f1_score, recall_score, accuracy_score
+precision = precision_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+sensitivity = recall_score(y_test, y_pred)
+specificity = sum(y_pred[y_test == 0] == 0) / sum(y_test == 0)
+
+# 3. Select the top 10 features based on importances
+top_10_feature_indices = np.argsort(feature_importances)[-10:]
+
+# Sort the top 10 features and their importances in descending order
+top_10_feature_indices = top_10_feature_indices[::-1]  # Reverse the order
+
+# 4. Get the names of the top 10 features
+top_10_feature_names = X_train.columns[top_10_feature_indices]
+
+
+# Display results
+print("\nResults for the original model:")
+print(classification_results)
+print(f"AUC: {roc_auc:.3f}")
+print(f"Accuracy: {accuracy:.3f}")
+print(f"No Information Rate: {no_info_rate:.3f}")
+print(f"Balanced Accuracy: {balanced_accuracy:.3f}")
+print(f"Kappa: {kappa:.3f}")
+print(f"Precision: {precision:.3f}")
+print(f"F1 Score: {f1:.3f}")
+print(f"Sensitivity: {sensitivity:.3f}")
+print(f"Specificity: {specificity:.3f}")
+
+# Print the names and importances of the top 10 features
+print("\nTop 10 Features and Their Importances:")
+for name, importance in zip(top_10_feature_names, feature_importances[top_10_feature_indices]):
+    print(f"{name}: {importance:.4f}")
+
+# Define the best hyperparameters obtained from tuning frin XGBoost
+
+# best_XGparams = {'subsample': 1, 'reg_lambda': 1e-05, 'reg_alpha': 1e-05, 'n_estimators': 1000, 'min_child_weight': 12, 'max_depth': 10, 'learning_rate': 0.05, 'gamma': 0.5, 'colsample_bytree': 1}
+
+best_XGparams = {'colsample_bytree': 0.7, 'gamma': 0.0, 'learning_rate': 0.09, 'max_depth': 7, 'min_child_weight': 2, 'n_estimators': 343, 'reg_alpha': 0.01, 'reg_lambda': 100, 'subsample': 0.6}
+# Model Training and Predictions
+xgboost_classifier = xgb.XGBClassifier(**best_XGparams,random_state=42) 
+xgboost_classifier.fit(X_train, y_train)
+y_pred = xgboost_classifier.predict(X_test)
+y_pred_proba = xgboost_classifier.predict_proba(X_test)[:, 1]
+y_pred_proba_xgb = y_pred_proba
+
+# Evaluation Metrics
+classification_results = classification_report(y_test, y_pred)
+roc_auc = roc_auc_score(y_test, y_pred_proba)
+fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+
+# Get feature importances
+feature_importances = xgboost_classifier.feature_importances_
+
+# Calculate Accuracy
+accuracy = (y_pred == y_test).mean()
+
+# Calculate No Information Rate (proportion of majority class)
+no_info_rate = (y_test == 0).mean()
+
+# Calculate Balanced Accuracy
+balanced_accuracy = 0.5 * (sum(y_pred[y_test == 1] == 1) / sum(y_test == 1) +
+                           sum(y_pred[y_test == 0] == 0) / sum(y_test == 0))
+
+# Calculate Kappa
+from sklearn.metrics import cohen_kappa_score
+kappa = cohen_kappa_score(y_test, y_pred)
+
+# Calculate Precision, F1 Score, Sensitivity, and Specificity
+from sklearn.metrics import precision_score, f1_score, recall_score, accuracy_score
+precision = precision_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+sensitivity = recall_score(y_test, y_pred)
+specificity = sum(y_pred[y_test == 0] == 0) / sum(y_test == 0)
+
+# 3. Select the top 10 features based on importances
+top_10_feature_indices = np.argsort(feature_importances)[-10:]
+
+# Sort the top 10 features and their importances in descending order
+top_10_feature_indices = top_10_feature_indices[::-1]  # Reverse the order
+
+# 4. Get the names of the top 10 features
+top_10_feature_names = X_train.columns[top_10_feature_indices]
+
+
+# Display results
+print("\nResults for the original model:")
+print(classification_results)
+print(f"AUC: {roc_auc:.3f}")
+print(f"Accuracy: {accuracy:.3f}")
+print(f"No Information Rate: {no_info_rate:.3f}")
+print(f"Balanced Accuracy: {balanced_accuracy:.3f}")
+print(f"Kappa: {kappa:.3f}")
+print(f"Precision: {precision:.3f}")
+print(f"F1 Score: {f1:.3f}")
+print(f"Sensitivity: {sensitivity:.3f}")
+print(f"Specificity: {specificity:.3f}")
+
+# Print the names and importances of the top 10 features
+print("\nTop 10 Features and Their Importances:")
+for name, importance in zip(top_10_feature_names, feature_importances[top_10_feature_indices]):
+    print(f"{name}: {importance:.4f}")
+
+# best parameter SVM
+import numpy as np
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler
+from sklearn.svm import SVC
+from sklearn.model_selection import cross_val_score
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.impute import SimpleImputer
+from sklearn.preprocessing import OneHotEncoder
+from sklearn.metrics import classification_report, roc_auc_score, roc_curve
+import matplotlib.pyplot as plt
+
+best_SVMparams = {'C':3.78 , 'kernel': "rbf",'degree': 3 }
+#best_SVMparams = {'C':1 , 'kernel': "rbf",'degree': 3 } # defalt parameter
+
+# Model Training and Predictions
+SVC_model = make_pipeline(StandardScaler(), SVC(**best_SVMparams,gamma='auto',probability=True, random_state=42))
+SVC_model.fit(X_train, y_train)
+y_pred = SVC_model.predict(X_test)
+y_pred_proba = SVC_model.predict_proba(X_test)[:, 1]
+y_pred_proba_svm = y_pred_proba
+
+# Evaluation Metrics
+classification_results = classification_report(y_test, y_pred)
+roc_auc = roc_auc_score(y_test, y_pred_proba)
+fpr, tpr, _ = roc_curve(y_test, y_pred_proba)
+
+# Calculate Accuracy
+accuracy = (y_pred == y_test).mean()
+
+# Calculate No Information Rate (proportion of majority class)
+no_info_rate = (y_test == 0).mean()
+
+# Calculate Balanced Accuracy
+balanced_accuracy = 0.5 * (sum(y_pred[y_test == 1] == 1) / sum(y_test == 1) +
+                           sum(y_pred[y_test == 0] == 0) / sum(y_test == 0))
+
+# Calculate Kappa
+from sklearn.metrics import cohen_kappa_score
+kappa = cohen_kappa_score(y_test, y_pred)
+
+# Calculate Precision, F1 Score, Sensitivity, and Specificity
+from sklearn.metrics import precision_score, f1_score, recall_score, accuracy_score
+precision = precision_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+sensitivity = recall_score(y_test, y_pred)
+specificity = sum(y_pred[y_test == 0] == 0) / sum(y_test == 0)
+
+
+# Display results
+print("\nResults for the original model:")
+print(classification_results)
+print(f"AUC: {roc_auc:.3f}")
+print(f"Accuracy: {accuracy:.3f}")
+print(f"No Information Rate: {no_info_rate:.3f}")
+print(f"Balanced Accuracy: {balanced_accuracy:.3f}")
+print(f"Kappa: {kappa:.3f}")
+print(f"Precision: {precision:.3f}")
+print(f"F1 Score: {f1:.3f}")
+print(f"Sensitivity: {sensitivity:.3f}")
+print(f"Specificity: {specificity:.3f}")
+
+import pandas as pd
+import numpy as np
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.svm import SVC
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report, roc_auc_score, roc_curve, cohen_kappa_score, precision_score, f1_score, recall_score, accuracy_score
+
+# Set a custom threshold for classification
+custom_threshold = 0.2
+
+# Define the best hyperparameters for XGBoost
+best_XGparams ={'colsample_bytree': 0.7, 'gamma': 0.0, 'learning_rate': 0.09, 'max_depth': 7, 'min_child_weight': 2, 'n_estimators': 343, 'reg_alpha': 0.01, 'reg_lambda': 100, 'subsample': 0.6}
+# Train XGBoost Model
+xgboost_classifier = XGBClassifier(**best_XGparams, random_state=42) 
+xgboost_classifier.fit(X_train, y_train)
+y_pred_proba_xgboost = xgboost_classifier.predict_proba(X_test)[:, 1]
+
+# Classify samples based on the threshold
+y_pred_xgboost = (y_pred_proba_xgboost >= custom_threshold).astype(int)
+
+# Calculate Accuracy
+accuracy_xgboost = accuracy_score(y_test, y_pred_xgboost)
+
+# Calculate No Information Rate (proportion of majority class)
+no_info_rate_xgboost = (y_test == 0).mean()
+
+# Calculate Balanced Accuracy
+balanced_accuracy_xgboost = 0.5 * (sum(y_pred_xgboost[y_test == 1] == 1) / sum(y_test == 1) +
+                                   sum(y_pred_xgboost[y_test == 0] == 0) / sum(y_test == 0))
+
+# Calculate Kappa
+kappa_xgboost = cohen_kappa_score(y_test, y_pred_xgboost)
+
+# Calculate Precision, F1 Score, Sensitivity, and Specificity
+precision_xgboost = precision_score(y_test, y_pred_xgboost)
+f1_xgboost = f1_score(y_test, y_pred_xgboost)
+sensitivity_xgboost = recall_score(y_test, y_pred_xgboost)
+specificity_xgboost = sum(y_pred_xgboost[y_test == 0] == 0) / sum(y_test == 0)
+f2_xgboost = (1 + 2**2) * (precision_xgboost * sensitivity_xgboost) / (2**2 * precision_xgboost + sensitivity_xgboost)
+
+# Print results for XGBoost Model
+print("Results for XGBoost Model:")
+print(classification_report(y_test, y_pred_xgboost))
+print(f"AUC: {roc_auc_score(y_test, y_pred_proba_xgboost):.3f}")
+print(f"Accuracy: {accuracy_xgboost:.3f}")
+print(f"No Information Rate: {no_info_rate_xgboost:.3f}")
+print(f"Balanced Accuracy: {balanced_accuracy_xgboost:.3f}")
+print(f"Kappa: {kappa_xgboost:.3f}")
+print(f"Precision: {precision_xgboost:.3f}")
+print(f"F1 Score: {f1_xgboost:.3f}")
+print(f"F2 Score: {f2_xgboost:.3f}")
+print(f"Sensitivity: {sensitivity_xgboost:.3f}")
+print(f"Specificity: {specificity_xgboost:.3f}")
+
+# Define the best hyperparameters for Random Forest
+best_RFparams = {
+    "max_depth": None,
+    "min_samples_split": 4,
+    "n_estimators": 53,
+    "max_features": 1
+}
+
+# Train Random Forest Model
+rf_classifier = RandomForestClassifier(**best_RFparams, random_state=42) 
+rf_classifier.fit(X_train, y_train)
+y_pred_proba_rf = rf_classifier.predict_proba(X_test)[:, 1]
+
+# Classify samples based on the threshold
+y_pred_rf = (y_pred_proba_rf >= custom_threshold).astype(int)
+
+# Calculate Accuracy
+accuracy_rf = accuracy_score(y_test, y_pred_rf)
+
+# Calculate No Information Rate (proportion of majority class)
+no_info_rate_rf = (y_test == 0).mean()
+
+# Calculate Balanced Accuracy
+balanced_accuracy_rf = 0.5 * (sum(y_pred_rf[y_test == 1] == 1) / sum(y_test == 1) +
+                              sum(y_pred_rf[y_test == 0] == 0) / sum(y_test == 0))
+
+# Calculate Kappa
+kappa_rf = cohen_kappa_score(y_test, y_pred_rf)
+
+# Calculate Precision, F1 Score, Sensitivity, and Specificity
+precision_rf = precision_score(y_test, y_pred_rf)
+f1_rf = f1_score(y_test, y_pred_rf)
+sensitivity_rf = recall_score(y_test, y_pred_rf)
+specificity_rf = sum(y_pred_rf[y_test == 0] == 0) / sum(y_test == 0)
+f2_rf = (1 + 2**2) * (precision_rf * sensitivity_rf) / (2**2 * precision_rf + sensitivity_rf)
+
+# Print results for Random Forest Model
+print("\nResults for Random Forest Model:")
+print(classification_report(y_test, y_pred_rf))
+print(f"AUC: {roc_auc_score(y_test, y_pred_proba_rf):.3f}")
+print(f"Accuracy: {accuracy_rf:.3f}")
+print(f"No Information Rate: {no_info_rate_rf:.3f}")
+print(f"Balanced Accuracy: {balanced_accuracy_rf:.3f}")
+print(f"Kappa: {kappa_rf:.3f}")
+print(f"Precision: {precision_rf:.3f}")
+print(f"F1 Score: {f1_rf:.3f}")
+print(f"F2 Score: {f2_rf:.3f}")
+print(f"Sensitivity: {sensitivity_rf:.3f}")
+print(f"Specificity: {specificity_rf:.3f}")
+
+# Define the best hyperparameters for SVM
+best_SVMparams = {'C':3.78 , 'kernel': "rbf",'degree': 3 }
+
+# Train SVM (SVC) Model
+SVC_model = make_pipeline(StandardScaler(), SVC(**best_SVMparams, gamma='auto', probability=True, random_state=42))
+SVC_model.fit(X_train, y_train)
+y_pred_proba_svm = SVC_model.predict_proba(X_test)[:, 1]
+
+# Classify samples based on the threshold
+y_pred_svm = (y_pred_proba_svm >= custom_threshold).astype(int)
+
+# Calculate Accuracy
+accuracy_svm = accuracy_score(y_test, y_pred_svm)
+
+# Calculate No Information Rate (proportion of majority class)
+no_info_rate_svm = (y_test == 0).mean()
+
+# Calculate Balanced Accuracy
+balanced_accuracy_svm = 0.5 * (sum(y_pred_svm[y_test == 1] == 1) / sum(y_test == 1) +
+                               sum(y_pred_svm[y_test == 0] == 0) / sum(y_test == 0))
+
+# Calculate Kappa
+kappa_svm = cohen_kappa_score(y_test, y_pred_svm)
+
+# Calculate Precision, F1 Score, Sensitivity, and Specificity
+precision_svm = precision_score(y_test, y_pred_svm)
+f1_svm = f1_score(y_test, y_pred_svm)
+sensitivity_svm = recall_score(y_test, y_pred_svm)
+specificity_svm = sum(y_pred_svm[y_test == 0] == 0) / sum(y_test == 0)
+f2_svm = (1 + 2**2) * (precision_svm * sensitivity_svm) / (2**2 * precision_svm + sensitivity_svm)
+
+# Print results for SVM Model
+print("\nResults for the SVM model:")
+print(classification_report(y_test, y_pred_svm))
+print(f"AUC: {roc_auc_score(y_test, y_pred_proba_svm):.3f}")
+print(f"Accuracy: {accuracy_svm:.3f}")
+print(f"No Information Rate: {no_info_rate_svm:.3f}")
+print(f"Balanced Accuracy: {balanced_accuracy_svm:.3f}")
+print(f"Kappa: {kappa_svm:.3f}")
+print(f"Precision: {precision_svm:.3f}")
+print(f"F1 Score: {f1_svm:.3f}")
+print(f"F2 Score: {f2_svm:.3f}")
+print(f"Sensitivity: {sensitivity_svm:.3f}")
+print(f"Specificity: {specificity_svm:.3f}")
+
+from sklearn.metrics import roc_auc_score, roc_curve
+import matplotlib.pyplot as plt
+
+
+# Calculate AUC for each classifier
+auc_xgb = roc_auc_score(y_test, y_pred_proba_xgb)
+auc_rf = roc_auc_score(y_test, y_pred_proba_rf)
+auc_svm = roc_auc_score(y_test, y_pred_proba_svm)
+
+# Plot ROC curve for each classifier
+fpr_xgb, tpr_xgb, _ = roc_curve(y_test, y_pred_proba_xgb)
+fpr_rf, tpr_rf, _ = roc_curve(y_test, y_pred_proba_rf)
+fpr_svm, tpr_svm, _ = roc_curve(y_test, y_pred_proba_svm)
+
+# Each risk score
+AUC_CART = roc_auc_score(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_CART'])
+AUC_REMS = roc_auc_score(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_REMS'])
+AUC_NEWS = roc_auc_score(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_NEWS'])
+AUC_NEWS2 = roc_auc_score(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_NEWS2'])
+AUC_MEWS = roc_auc_score(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_MEWS'])
+
+# Plot ROC curve for each risk score
+fpr_CART, tpr_CART, _ = roc_curve(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_CART'])
+fpr_REMS, tpr_REMS, _ = roc_curve(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_REMS'])
+fpr_NEWS, tpr_NEWS, _ = roc_curve(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_NEWS'])
+fpr_NEWS2, tpr_NEWS2, _ = roc_curve(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_NEWS2'])
+fpr_MEWS, tpr_MEWS, _ = roc_curve(y_test,UC_2_final[UC_2_final['label'] == 'test']['score_MEWS'])
+
+plt.figure(figsize=(10, 6))
+plt.plot(fpr_xgb, tpr_xgb, label=f'XGBoost (AUC = {auc_xgb:.3f})', linewidth=2)
+plt.plot(fpr_rf, tpr_rf, label=f'Random Forest (AUC = {auc_rf:.3f})', linewidth=2)
+plt.plot(fpr_svm, tpr_svm, label=f'SVM (AUC = {auc_svm:.3f})', linewidth=2)
+#plt.plot(fpr_CART, tpr_CART, label=f'CART (AUC = {AUC_CART:.3f})', linewidth=2)
+plt.plot(fpr_MEWS, tpr_MEWS, label=f'MEWS (AUC = {AUC_MEWS:.3f})', linewidth=2)
+plt.plot(fpr_NEWS, tpr_NEWS, label=f'NEWS (AUC = {AUC_NEWS:.3f})', linewidth=2)
+plt.plot(fpr_REMS, tpr_REMS, label=f'REMS (AUC = {AUC_REMS:.3f})', linewidth=2)
+#plt.plot(fpr_NEWS2, tpr_NEWS2, label=f'NEWS2 (AUC = {AUC_NEWS2:.3f})', linewidth=2)
+plt.plot([0, 1], [0, 1], 'k--', linewidth=2)
+plt.xlim([0.0, 1.0])
+plt.ylim([0.0, 1.05])
+plt.xlabel('1-Specificity')
+plt.ylabel('Sensitivity')
+plt.title('Receiver Operating Characteristic (ROC) Curve')
+plt.legend(loc='lower right')
+plt.show()
+
+# Set categorical type to fit PDP, for DALEX
+UC_2_final['ambulance'] = UC_2_final['ambulance'].astype('category')
+
+X_train = UC_2_final[UC_2_final['label'] == 'train'][numerical_features + categorical_features]
+y_train = UC_2_final[UC_2_final['label'] == 'train']['outcome_critical']
+X_test = UC_2_final[UC_2_final['label'] == 'test'][numerical_features + categorical_features]
+y_test = UC_2_final[UC_2_final['label'] == 'test']['outcome_critical']
+
+classifier = xgboost_classifier
+X = X_train
+y = y_train
+
+exp = dx.Explainer(classifier, X, y)
+
+# Prediction of outcome for ID2.
+
+import pandas as pd
+individual_data = {
+    'ESI': [2],
+    'Bicarbonate': [23.0],
+    'Magnesium': [1.8],
+    'Albumin': [3.4],
+    'AST': [57.0],
+    'ALT': [56.0],
+    'Hemoglobin ': [8.7],
+    'triage_MAP': [79.0],
+    'MCV': [105.0],
+    'Calcium': [8.0],
+    'Chloride': [88.0],
+    'Creatinine': [0.4],
+    'Glucose ': [91.0],
+    'Sodium': [117.0],
+    'aPPT': [62.1],
+    'Urea Nitrogen': [19.0],
+    'Platelet Count': [57.0],
+    'White Blood Cells': [5.0],
+    'Lactate': [1.767264],
+    'ambulance': [1]
+}
+
+ID2 = pd.DataFrame(individual_data, index=['ID2'])
+exp.predict(ID2)
+# Break-down plots & Shapley values
+
+bd_ID2 = exp.predict_parts(ID2, type='break_down', label=ID2.index[0])
+sh_ID2 = exp.predict_parts(ID2, type='shap', B = 10, label=ID2.index[0])
+
+# restart kernal if no manifestation
+bd_ID2.plot()
+sh_ID2.plot()
+
+# Prediction of outcome for ID1.
+
+import pandas as pd
+individual_data = {
+    'ESI': [3],
+    'Bicarbonate': [22.0],
+    'Magnesium': [1.5],
+    'Albumin': [3.439416],
+    'AST': [50.647858],
+    'ALT': [44.883915],
+    'Hemoglobin ': [11.3],
+    'triage_MAP': [92.666667],
+    'MCV': [80.0],
+    'Calcium': [9.3],
+    'Chloride': [107.0],
+    'Creatinine': [1.3],
+    'Glucose ': [120.0],
+    'Sodium': [141.0],
+    'aPPT': [36.943995],
+    'Urea Nitrogen': [16.0],
+    'Platelet Count': [237.0],
+    'White Blood Cells': [7.8],
+    'Lactate': [1.693825],
+    'ambulance': [1]
+}
+
+ID1 = pd.DataFrame(individual_data, index=['ID1'])
+exp.predict(ID1)
+# Break-down plots & Shapley values
+
+bd_ID1 = exp.predict_parts(ID1, type='break_down', label=ID1.index[0])
+sh_ID1 = exp.predict_parts(ID1, type='shap', B = 10, label=ID1.index[0])
+
+# restart kernal if no manifestation
+bd_ID1.plot()
+sh_ID1.plot()
+
+# Performance of test_dataset
+classifier = xgboost_classifier
+X = X_test
+y = y_test
+
+exp_test = dx.Explainer(classifier, X, y)
+
+mp = exp_test.model_performance(model_type = 'classification')
+mp.result
+
+# variable_importance (permutation) for train_dataset (or test_dataset if needed)
+mp_rf = exp.model_parts(loss_function='1-auc')
+mp_rf.result[::-1] # reverse the order
+mp_rf.plot(max_vars=20)
+
+numerical_features = ["ESI",  # renamed from "triage_acuity"
+                      "Bicarbonate", "Magnesium", "Albumin", "AST",  # renamed from "Asparate Aminotransferase (AST)"
+                      "ALT",  # renamed from "Alanine Aminotransferase (ALT)"
+                      "Hemoglobin ",  # renamed from "Hemoglobin.1" and removed extra space
+                      "triage_MAP", "MCV",
+                      "Calcium",  # renamed from "Calcium, Total"
+                      "Chloride", "Creatinine", "Glucose ",  # renamed from "Glucose.1" and removed extra space
+                      "Sodium", "aPPT",  # renamed from "PTT"
+                      "Urea Nitrogen", "Platelet Count", "White Blood Cells", "Lactate"]
+
+categorical_features = ["ambulance"]
+
+pd_rf_cont = exp.model_profile(variables=["ESI",  # renamed from "triage_acuity"
+                                          "Bicarbonate", "Magnesium", "Albumin", "AST",  # renamed from "Asparate Aminotransferase (AST)"
+                                          "ALT",  # renamed from "Alanine Aminotransferase (ALT)"
+                                          "Hemoglobin ",  # renamed from "Hemoglobin.1" and removed extra space
+                                          "triage_MAP", "MCV",
+                                          "Calcium",  # renamed from "Calcium, Total"
+                                          "Chloride", "Creatinine", "Glucose ",  # renamed from "Glucose.1" and removed extra space
+                                          "Sodium", "aPPT",  # renamed from "PTT"
+                                          "Urea Nitrogen", "Platelet Count", "White Blood Cells", "Lactate"])
+pd_rf_cat = exp.model_profile(type='partial', variable_type='categorical',
+                              variables=["ambulance"], label="pdp")
+
+pd_rf_cat.plot()
+# Partial-dependence profiles
+pd_rf_cont.plot()
